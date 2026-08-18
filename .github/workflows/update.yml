@@ -1,0 +1,57 @@
+name: Mise à jour quotidienne
+
+# Quand ça se lance :
+on:
+  schedule:
+    # Tous les jours à 11h00 UTC = 13h00 en France (heure d'été)
+    - cron: "0 11 * * *"
+  workflow_dispatch:   # + un bouton pour lancer à la main depuis GitHub
+
+# Autorise le robot à écrire dans le dépôt et à publier le site
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  collecte:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collecter les prix Steam
+        run: python scripts/collect.py
+
+      - name: Construire le site
+        run: python scripts/build.py
+
+      - name: Sauvegarder l'historique
+        run: |
+          git config user.name "deal-radar-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/ site/
+          # "diff --staged --quiet" renvoie 1 s'il y a des changements
+          git diff --staged --quiet || git commit -m "Relevé du $(date +'%d/%m/%Y')"
+          git push
+
+      - name: Préparer la publication
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publier:
+    needs: collecte
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - name: Mettre le site en ligne
+        id: deploiement
+        uses: actions/deploy-pages@v4
